@@ -1,0 +1,27 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "renko-screener"
+version = "2.0.0"
+description = "NSE F&O Renko-Ichimoku daily screener with CMF and RSI filters (PRD v2.0)"
+requires-python = ">=3.10"
+dependencies = [
+    "pandas>=2.0",
+    "numpy>=1.24",
+    "yfinance>=0.2.40",
+    "tabulate>=0.9",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0"]
+
+[project.scripts]
+renko-screener = "renko_screener.cli:main"
+
+[tool.setuptools]
+packages = ["renko_screener"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
