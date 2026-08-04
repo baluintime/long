@@ -3,14 +3,15 @@ requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "renko-screener"
-version = "2.0.0"
-description = "NSE F&O Renko-Ichimoku daily screener with CMF and RSI filters (PRD v2.0)"
+name = "nse-ichimoku"
+version = "1.0.0"
+description = "Screen every NSE-listed stock for closes above or below all Ichimoku lines"
 requires-python = ">=3.10"
 dependencies = [
     "pandas>=2.0",
     "numpy>=1.24",
     "yfinance>=0.2.40",
+    "requests>=2.31",
     "tabulate>=0.9",
 ]
 
@@ -18,10 +19,10 @@ dependencies = [
 dev = ["pytest>=8.0"]
 
 [project.scripts]
-renko-screener = "renko_screener.cli:main"
+nse-ichimoku = "nse_ichimoku.cli:main"
 
 [tool.setuptools]
-packages = ["renko_screener"]
+packages = ["nse_ichimoku"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
