@@ -11,6 +11,9 @@ from .screener import scan
 
 log = logging.getLogger(__name__)
 
+#: Used when --output is passed without a path.
+DEFAULT_OUTPUT = "ichimoku-{date}.xlsx"
+
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
@@ -83,8 +86,11 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--output",
-        help="write the detailed results to this CSV path; a {date} placeholder "
-        "expands to the session date, so daily runs do not overwrite each other",
+        nargs="?",
+        const=DEFAULT_OUTPUT,
+        help="write the full scan to this path; .xlsx gives a formatted Excel "
+        "workbook, .csv a flat file. A {date} placeholder expands to the session "
+        f"date. Passed with no value, writes {DEFAULT_OUTPUT}",
     )
     parser.add_argument("-v", "--verbose", action="store_true", help="verbose logging")
     return parser
@@ -154,6 +160,14 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.output:
         out_path = report.resolve_output_path(args.output, result)
-        report.write_csv(result, out_path, show_mixed=args.show_mixed)
-        print(f"Detailed results written to {out_path}")
+        try:
+            written = report.write_results(result, out_path, len(symbols), source)
+        except ImportError:
+            print(
+                "error: writing .xlsx needs openpyxl — pip install openpyxl "
+                "(or use a .csv path)",
+                file=sys.stderr,
+            )
+            return 1
+        print(f"Full results written to {written}")
     return 0

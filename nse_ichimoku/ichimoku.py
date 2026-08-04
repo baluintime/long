@@ -11,6 +11,7 @@ when it is less than every one of them. Anything else is MIXED.
 from __future__ import annotations
 
 import enum
+import math
 from dataclasses import dataclass
 
 import pandas as pd
@@ -24,6 +25,21 @@ DISPLACEMENT = 26
 MIN_BARS = SENKOU_B_PERIOD + DISPLACEMENT
 
 LINE_NAMES = ("tenkan", "kijun", "senkou_a", "senkou_b")
+
+#: Levels the close is measured against as a percentage. The two cloud
+#: edges are derived from Senkou A/B but are what a trader actually reads.
+DISTANCE_TARGETS = (*LINE_NAMES, "cloud_top", "cloud_bottom")
+
+
+def percent_gap(close: float, level: float) -> float:
+    """Signed distance from ``level`` to ``close``, in percent of the level.
+
+    Positive means the close sits above the level. Returns NaN for a level
+    that cannot anchor a percentage.
+    """
+    if not math.isfinite(level) or not math.isfinite(close) or level <= 0:
+        return float("nan")
+    return (close - level) / level * 100.0
 
 
 class Position(str, enum.Enum):
@@ -56,6 +72,29 @@ class IchimokuReading:
     @property
     def cloud_bottom(self) -> float:
         return min(self.senkou_a, self.senkou_b)
+
+    @property
+    def percent_gaps(self) -> dict[str, float]:
+        """How far the close sits from each level, in percent."""
+        return {
+            name: percent_gap(self.close, getattr(self, name))
+            for name in DISTANCE_TARGETS
+        }
+
+    @property
+    def percent_to_nearest_line(self) -> float:
+        """Signed gap to whichever of the four lines the close is nearest.
+
+        For an ABOVE stock this is the cushion before it breaks back into
+        the lines; for a BELOW stock, how far it must rally to reach them.
+        """
+        gaps = [
+            percent_gap(self.close, getattr(self, name))
+            for name in LINE_NAMES
+            if math.isfinite(getattr(self, name))
+        ]
+        gaps = [g for g in gaps if math.isfinite(g)]
+        return min(gaps, key=abs) if gaps else float("nan")
 
 
 def _midpoint(high: pd.Series, low: pd.Series, period: int) -> pd.Series:

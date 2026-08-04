@@ -107,9 +107,11 @@ def test_cli_end_to_end_from_csv(tmp_path, capsys):
     assert "above: 1" in printed and "below: 1" in printed
     assert "skipped (no/short data): 1" in printed  # MISSING had no file
 
+    # Exported files carry the whole scan, including the mixed stocks the
+    # console hides.
     written = pd.read_csv(out_csv)
-    assert set(written["Symbol"]) == {"BULLCO", "BEARCO"}
-    assert set(written["Position"]) == {"ABOVE", "BELOW"}
+    assert set(written["Symbol"]) == {"BULLCO", "BEARCO", "FLATCO"}
+    assert set(written["Position"]) == {"ABOVE", "BELOW", "MIXED"}
 
 
 def test_cli_detail_mode(tmp_path, capsys):

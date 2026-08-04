@@ -87,11 +87,49 @@ as `lagging the session` in the summary, and `--fresh-only` drops them so
 the lists contain only stocks that actually traded in the session:
 
 ```bash
-python -m nse_ichimoku --fresh-only --output scans/ichimoku-{date}.csv
+python -m nse_ichimoku --fresh-only --output scans/ichimoku-{date}.xlsx
 ```
 
 The `{date}` placeholder expands to the session date, so each day's run
 lands in its own file instead of overwriting yesterday's.
+
+## The Excel workbook
+
+`--output` writes an `.xlsx` workbook holding the complete scan — every
+stock, not just the two headline lists:
+
+| Sheet | Contents |
+|---|---|
+| Summary | Session date, run time, universe size and source, and the counts |
+| Above | Stocks above every line, widest cushion first |
+| Below | Stocks below every line, deepest first |
+| Mixed | Stocks tangled in the lines |
+| All | Every classified stock, alphabetical |
+
+Each row carries the raw levels *and* the percentage gap between the close
+and every line:
+
+| Column | Meaning |
+|---|---|
+| Close, Tenkan, Kijun, Senkou A, Senkou B | The levels themselves, in INR |
+| Cloud Top / Cloud Bottom | The higher and lower of Senkou A and B |
+| % vs Tenkan / Kijun / Senkou A / Senkou B | `(Close − Line) / Line × 100` |
+| % vs Cloud Top / Cloud Bottom | The same, against the cloud edges |
+| % to Nearest Line | The signed gap to whichever line is closest |
+| Chikou Clear | Whether the lagging span confirms the position |
+
+The sign convention is uniform: **positive means the close is above that
+level**, so an ABOVE stock shows positive percentages across the row and a
+BELOW stock negative ones.
+
+`% to Nearest Line` is the one to sort by. For a stock above the cloud it
+is the cushion before price breaks back into the lines — a name sitting
++0.4% above its Tenkan is a very different proposition from one sitting
++12% above everything, even though both are simply "ABOVE".
+
+The sheets arrive frozen, auto-filtered, and formatted, so you can sort and
+filter the moment you open the file. Pass a `.csv` path instead if you want
+a flat file — same columns, single sheet.
 
 Give the feed some room after the close — running around an hour later is
 comfortable — and check the as-of line matches the session you expect.
@@ -101,7 +139,7 @@ newly listed symbols without re-downloading the master file on retries.
 Options worth knowing:
 
 ```bash
-# Show the Ichimoku values behind the classification
+# Show how far each close sits from every line, in %
 python -m nse_ichimoku --detail
 
 # Include the stocks tangled in the lines
@@ -113,8 +151,11 @@ python -m nse_ichimoku --symbols RELIANCE TCS INFY
 # Try a slice of the exchange first — a full scan takes a while
 python -m nse_ichimoku --limit 200
 
-# Save results (use {date} to keep one file per session)
-python -m nse_ichimoku --output ichimoku-{date}.csv
+# Save the full scan to Excel ({date} keeps one file per session)
+python -m nse_ichimoku --output ichimoku-{date}.xlsx
+
+# --output with no path is shorthand for exactly that
+python -m nse_ichimoku --output
 
 # Ignore stocks whose last bar lags the rest of the market
 python -m nse_ichimoku --fresh-only

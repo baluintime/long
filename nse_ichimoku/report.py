@@ -11,16 +11,45 @@ import pandas as pd
 from .ichimoku import IchimokuReading, Position
 from .screener import ScanResult, ist_today
 
+#: Every field, in the order they appear in the spreadsheet.
 DETAIL_COLUMNS = [
     "Symbol",
     "Date",
     "Close",
+    "Position",
     "Tenkan",
     "Kijun",
     "Senkou A",
     "Senkou B",
-    "Position",
+    "Cloud Top",
+    "Cloud Bottom",
+    "% vs Tenkan",
+    "% vs Kijun",
+    "% vs Senkou A",
+    "% vs Senkou B",
+    "% vs Cloud Top",
+    "% vs Cloud Bottom",
+    "% to Nearest Line",
     "Chikou Clear",
+]
+
+#: Percentage columns, for number formatting and console selection.
+PERCENT_COLUMNS = [c for c in DETAIL_COLUMNS if c.startswith("%")]
+
+#: Price columns, kept apart because they format differently.
+PRICE_COLUMNS = ["Close", "Tenkan", "Kijun", "Senkou A", "Senkou B", "Cloud Top", "Cloud Bottom"]
+
+#: A terminal-friendly subset: the percentages are the point of the table.
+CONSOLE_COLUMNS = [
+    "Symbol",
+    "Date",
+    "Close",
+    "Position",
+    "% vs Tenkan",
+    "% vs Kijun",
+    "% vs Senkou A",
+    "% vs Senkou B",
+    "% to Nearest Line",
 ]
 
 
@@ -96,27 +125,36 @@ def render_names(result: ScanResult, show_mixed: bool = False) -> str:
     return "\n".join(sections)
 
 
+def _row(reading: IchimokuReading) -> dict[str, object]:
+    gaps = reading.percent_gaps
+    return {
+        "Symbol": reading.symbol,
+        "Date": reading.date.date().isoformat(),
+        "Close": round(reading.close, 2),
+        "Position": str(reading.position),
+        "Tenkan": round(reading.tenkan, 2),
+        "Kijun": round(reading.kijun, 2),
+        "Senkou A": round(reading.senkou_a, 2),
+        "Senkou B": round(reading.senkou_b, 2),
+        "Cloud Top": round(reading.cloud_top, 2),
+        "Cloud Bottom": round(reading.cloud_bottom, 2),
+        "% vs Tenkan": round(gaps["tenkan"], 2),
+        "% vs Kijun": round(gaps["kijun"], 2),
+        "% vs Senkou A": round(gaps["senkou_a"], 2),
+        "% vs Senkou B": round(gaps["senkou_b"], 2),
+        "% vs Cloud Top": round(gaps["cloud_top"], 2),
+        "% vs Cloud Bottom": round(gaps["cloud_bottom"], 2),
+        "% to Nearest Line": round(reading.percent_to_nearest_line, 2),
+        "Chikou Clear": reading.chikou_clear,
+    }
+
+
 def readings_to_frame(readings: list[IchimokuReading]) -> pd.DataFrame:
-    return pd.DataFrame(
-        [
-            {
-                "Symbol": r.symbol,
-                "Date": r.date.date().isoformat(),
-                "Close": round(r.close, 2),
-                "Tenkan": round(r.tenkan, 2),
-                "Kijun": round(r.kijun, 2),
-                "Senkou A": round(r.senkou_a, 2),
-                "Senkou B": round(r.senkou_b, 2),
-                "Position": str(r.position),
-                "Chikou Clear": r.chikou_clear,
-            }
-            for r in readings
-        ],
-        columns=DETAIL_COLUMNS,
-    )
+    return pd.DataFrame([_row(r) for r in readings], columns=DETAIL_COLUMNS)
 
 
 def render_detail(result: ScanResult, show_mixed: bool = False) -> str:
+    """Console table of percentage gaps; the raw levels live in the workbook."""
     from tabulate import tabulate
 
     readings = result.above + result.below
@@ -124,15 +162,30 @@ def render_detail(result: ScanResult, show_mixed: bool = False) -> str:
         readings += result.mixed
     if not readings:
         return "No stocks with enough history to place against the cloud."
-    frame = readings_to_frame(readings)
+    frame = readings_to_frame(readings)[CONSOLE_COLUMNS]
     return tabulate(frame, headers="keys", tablefmt="github", showindex=False)
 
 
-def write_csv(result: ScanResult, path: str | Path, show_mixed: bool = False) -> None:
-    readings = result.above + result.below
-    if show_mixed:
-        readings += result.mixed
-    readings_to_frame(readings).to_csv(path, index=False)
+def all_readings(result: ScanResult) -> list[IchimokuReading]:
+    """Every classified stock — exported files hold the complete scan."""
+    return result.above + result.below + result.mixed
+
+
+def write_csv(result: ScanResult, path: str | Path) -> None:
+    readings_to_frame(all_readings(result)).to_csv(path, index=False)
+
+
+def write_results(
+    result: ScanResult, path: str | Path, universe_size: int, source: str
+) -> Path:
+    """Write the scan to ``path``, choosing the format from its extension."""
+    out_path = Path(path)
+    if out_path.suffix.lower() in (".xlsx", ".xlsm"):
+        from .excel import write_workbook
+
+        return write_workbook(result, out_path, universe_size, source)
+    write_csv(result, out_path)
+    return out_path
 
 
 def summary_line(result: ScanResult, universe_size: int, source: str) -> str:
