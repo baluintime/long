@@ -3,12 +3,13 @@
 from __future__ import annotations
 
 import shutil
+from datetime import date
 from pathlib import Path
 
 import pandas as pd
 
 from .ichimoku import IchimokuReading, Position
-from .screener import ScanResult
+from .screener import ScanResult, ist_today
 
 DETAIL_COLUMNS = [
     "Symbol",
@@ -36,6 +37,37 @@ def _wrap_names(names: list[str], width: int | None = None) -> str:
         row = names[start : start + per_row]
         lines.append("  " + "".join(name.ljust(column_width) for name in row).rstrip())
     return "\n".join(lines)
+
+
+def as_of_line(result: ScanResult) -> str:
+    """Name the trading session these results describe."""
+    as_of = result.as_of
+    if as_of is None:
+        return "No stocks had enough history to place against the cloud."
+    return f"Ichimoku positions as of {as_of.date().isoformat()} (latest NSE daily close)"
+
+
+def freshness_warning(result: ScanResult, today: date | None = None) -> str | None:
+    """Flag a scan whose newest bar is not today's session.
+
+    A once-a-day post-close run should be looking at today's close. If it
+    is not — a market holiday, a weekend, or a feed that has not published
+    yet — say so rather than let yesterday's data pass for current.
+    """
+    as_of = result.as_of
+    if as_of is None:
+        return None
+    today = today or ist_today()
+    lag = (today - as_of.date()).days
+    if lag <= 0:
+        return None
+    day_word = "day" if lag == 1 else "days"
+    return (
+        f"warning: the latest daily bar is {as_of.date().isoformat()}, "
+        f"{lag} {day_word} behind today ({today.isoformat()} IST). "
+        "Market holiday or weekend, or the price feed has not published "
+        "today's close yet — re-run later if you expected today's session."
+    )
 
 
 def _count(names: list[str]) -> str:
@@ -105,10 +137,22 @@ def write_csv(result: ScanResult, path: str | Path, show_mixed: bool = False) ->
 
 def summary_line(result: ScanResult, universe_size: int, source: str) -> str:
     counts = {p: len(result.by_position(p)) for p in Position}
-    return (
-        f"Universe: {universe_size} NSE symbols (source: {source}) | "
-        f"evaluated: {len(result.readings)} | "
-        f"above: {counts[Position.ABOVE]} | below: {counts[Position.BELOW]} | "
-        f"mixed: {counts[Position.MIXED]} | "
-        f"skipped (no/short data): {len(result.skipped)}"
-    )
+    parts = [
+        f"Universe: {universe_size} NSE symbols (source: {source})",
+        f"evaluated: {len(result.readings)}",
+        f"above: {counts[Position.ABOVE]}",
+        f"below: {counts[Position.BELOW]}",
+        f"mixed: {counts[Position.MIXED]}",
+        f"skipped (no/short data): {len(result.skipped)}",
+    ]
+    stale = result.stale
+    if stale:
+        parts.append(f"lagging the session: {len(stale)}")
+    return " | ".join(parts)
+
+
+def resolve_output_path(path: str | Path, result: ScanResult) -> Path:
+    """Expand a ``{date}`` placeholder so daily runs do not overwrite each other."""
+    as_of = result.as_of
+    stamp = (as_of.date() if as_of is not None else ist_today()).isoformat()
+    return Path(str(path).replace("{date}", stamp))

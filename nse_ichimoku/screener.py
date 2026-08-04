@@ -4,12 +4,22 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
+from datetime import date, datetime, timedelta, timezone
 
 import pandas as pd
 
 from .ichimoku import IchimokuReading, Position, read_latest
 
 log = logging.getLogger(__name__)
+
+#: NSE trades on Indian Standard Time, which has no daylight saving, so a
+#: fixed offset is exact and needs no timezone database.
+IST = timezone(timedelta(hours=5, minutes=30))
+
+
+def ist_today() -> date:
+    """Today's date in the exchange's own timezone."""
+    return datetime.now(IST).date()
 
 
 @dataclass
@@ -34,6 +44,40 @@ class ScanResult:
     @property
     def mixed(self) -> list[IchimokuReading]:
         return self.by_position(Position.MIXED)
+
+    @property
+    def as_of(self) -> pd.Timestamp | None:
+        """The trading session this scan represents.
+
+        Taken as the most common last-bar date across the universe rather
+        than the maximum: a single ticker carrying an early or stray bar
+        should not redefine which session the market as a whole closed on.
+        """
+        if not self.readings:
+            return None
+        dates = pd.Series([r.date for r in self.readings])
+        return pd.Timestamp(dates.mode().iloc[0])
+
+    @property
+    def stale(self) -> list[IchimokuReading]:
+        """Readings whose last bar predates the session the scan is for."""
+        as_of = self.as_of
+        if as_of is None:
+            return []
+        return sorted(
+            (r for r in self.readings if r.date < as_of), key=lambda r: r.symbol
+        )
+
+    def drop_stale(self) -> ScanResult:
+        """A copy holding only symbols that traded in the ``as_of`` session."""
+        as_of = self.as_of
+        if as_of is None:
+            return self
+        stale_symbols = [r.symbol for r in self.stale]
+        return ScanResult(
+            readings=[r for r in self.readings if r.date >= as_of],
+            skipped=sorted(self.skipped + stale_symbols),
+        )
 
 
 def scan(price_data: dict[str, pd.DataFrame]) -> ScanResult:

@@ -50,6 +50,8 @@ That downloads the full NSE equity list, pulls a year of daily candles for
 each symbol from Yahoo Finance, and prints the two lists of names:
 
 ```
+Ichimoku positions as of 2026-08-04 (latest NSE daily close)
+
 ABOVE ALL ICHIMOKU LINES — bullish (5 stocks)
   HDFCBANK  INFY      RELIANCE  TCS       WIPRO
 
@@ -58,6 +60,43 @@ BELOW ALL ICHIMOKU LINES — bearish (3 stocks)
 
 Universe: 2114 NSE symbols (source: nse) | evaluated: 1987 | above: 5 | below: 3 | mixed: 1979 | skipped (no/short data): 127
 ```
+
+## Running it once a day after the close
+
+The screener works on daily candles and is built to be run once per session,
+after the market closes. Two things keep that honest:
+
+**The as-of line names the session.** Every run states which trading day the
+result describes, so you are never guessing whether you are looking at
+today's close or yesterday's.
+
+**A stale scan announces itself.** NSE closes at 3:30 PM IST, but the daily
+bar reaches the data feed some time later. If you run too early, on a
+weekend, or on a market holiday, the newest available bar is not today's —
+so the screener prints a warning to stderr before the results:
+
+```
+warning: the latest daily bar is 2026-07-15, 20 days behind today (2026-08-04 IST).
+Market holiday or weekend, or the price feed has not published today's close yet —
+re-run later if you expected today's session.
+```
+
+Individual stocks can also lag the market — a halted or suspended counter
+keeps its last traded bar while everything else moves on. Those are counted
+as `lagging the session` in the summary, and `--fresh-only` drops them so
+the lists contain only stocks that actually traded in the session:
+
+```bash
+python -m nse_ichimoku --fresh-only --output scans/ichimoku-{date}.csv
+```
+
+The `{date}` placeholder expands to the session date, so each day's run
+lands in its own file instead of overwriting yesterday's.
+
+Give the feed some room after the close — running around an hour later is
+comfortable — and check the as-of line matches the session you expect.
+The NSE stock list itself is cached for a day, so a once-daily run picks up
+newly listed symbols without re-downloading the master file on retries.
 
 Options worth knowing:
 
@@ -74,8 +113,11 @@ python -m nse_ichimoku --symbols RELIANCE TCS INFY
 # Try a slice of the exchange first — a full scan takes a while
 python -m nse_ichimoku --limit 200
 
-# Save results
-python -m nse_ichimoku --output ichimoku.csv
+# Save results (use {date} to keep one file per session)
+python -m nse_ichimoku --output ichimoku-{date}.csv
+
+# Ignore stocks whose last bar lags the rest of the market
+python -m nse_ichimoku --fresh-only
 
 # Re-download the NSE list instead of using the day-old cache
 python -m nse_ichimoku --refresh-universe

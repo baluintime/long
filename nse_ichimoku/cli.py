@@ -72,11 +72,20 @@ def build_parser() -> argparse.ArgumentParser:
         help="also list stocks whose close is tangled in the lines",
     )
     parser.add_argument(
+        "--fresh-only",
+        action="store_true",
+        help="drop symbols whose latest bar lags the rest of the market",
+    )
+    parser.add_argument(
         "--detail",
         action="store_true",
         help="print the full table of Ichimoku values instead of just names",
     )
-    parser.add_argument("--output", help="write the detailed results to this CSV path")
+    parser.add_argument(
+        "--output",
+        help="write the detailed results to this CSV path; a {date} placeholder "
+        "expands to the session date, so daily runs do not overwrite each other",
+    )
     parser.add_argument("-v", "--verbose", action="store_true", help="verbose logging")
     return parser
 
@@ -128,7 +137,14 @@ def main(argv: list[str] | None = None) -> int:
 
     result = scan(price_data)
     result.skipped.extend(sorted(set(symbols) - set(price_data)))
+    if args.fresh_only:
+        result = result.drop_stale()
 
+    warning = report.freshness_warning(result)
+    if warning:
+        print(warning + "\n", file=sys.stderr)
+
+    print(report.as_of_line(result) + "\n")
     if args.detail:
         print(report.render_detail(result, show_mixed=args.show_mixed))
     else:
@@ -137,6 +153,7 @@ def main(argv: list[str] | None = None) -> int:
     print("\n" + report.summary_line(result, len(symbols), source))
 
     if args.output:
-        report.write_csv(result, args.output, show_mixed=args.show_mixed)
-        print(f"Detailed results written to {args.output}")
+        out_path = report.resolve_output_path(args.output, result)
+        report.write_csv(result, out_path, show_mixed=args.show_mixed)
+        print(f"Detailed results written to {out_path}")
     return 0
