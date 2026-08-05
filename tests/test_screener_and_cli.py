@@ -41,13 +41,15 @@ def test_scan_groups_by_position(price_data):
     assert [r.symbol for r in result.above] == ["BULLCO"]
     assert [r.symbol for r in result.below] == ["BEARCO"]
     assert [r.symbol for r in result.mixed] == ["FLATCO"]
-    assert result.skipped == ["NEWLIST"]  # not enough history for a full cloud
+    # Not enough history for a full cloud, and the reason says so.
+    assert list(result.skipped) == ["NEWLIST"]
+    assert "insufficient history" in result.skipped["NEWLIST"]
 
 
 def test_scan_skips_unusable_frames():
     result = scan({"BROKEN": pd.DataFrame({"Close": [1.0, 2.0]})})
     assert result.readings == []
-    assert result.skipped == ["BROKEN"]
+    assert result.skipped["BROKEN"] == "missing columns: High, Low"
 
 
 def test_render_names_lists_both_sides(price_data):
@@ -118,7 +120,16 @@ def test_cli_detail_mode(tmp_path, capsys):
     _write_csvs(tmp_path, {"BULLCO": UPTREND})
     assert (
         cli.main(
-            ["--symbols", "BULLCO", "--source", "csv", "--csv-dir", str(tmp_path), "--detail"]
+            [
+                "--symbols",
+                "BULLCO",
+                "--source",
+                "csv",
+                "--csv-dir",
+                str(tmp_path),
+                "--detail",
+                "--no-file",
+            ]
         )
         == 0
     )
@@ -142,6 +153,7 @@ def test_cli_limit_applies_to_universe(tmp_path, capsys, monkeypatch):
                 "csv",
                 "--csv-dir",
                 str(tmp_path),
+                "--no-file",
             ]
         )
         == 0

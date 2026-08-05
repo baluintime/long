@@ -9,3 +9,6 @@ build/
 report*.csv
 .DS_Store
 data/.cache_equity_list.csv
+ichimoku-*.xlsx
+ichimoku-*.csv
+scans/

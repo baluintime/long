@@ -138,6 +138,8 @@ def read_latest(symbol: str, ohlc: pd.DataFrame) -> IchimokuReading | None:
     Returns None when there is too little history for a fully-formed cloud
     or the data contains gaps that leave the latest lines undefined.
     """
+    if not {"High", "Low", "Close"}.issubset(ohlc.columns):
+        return None
     ohlc = ohlc.dropna(subset=["High", "Low", "Close"]).sort_index()
     if len(ohlc) < MIN_BARS:
         return None

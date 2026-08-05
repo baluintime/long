@@ -50,6 +50,16 @@ def _sorted_frame(readings, by: str | None, ascending: bool) -> pd.DataFrame:
     return frame
 
 
+SKIPPED_COLUMNS = ["Symbol", "Reason"]
+
+
+def build_skipped_frame(result: ScanResult) -> pd.DataFrame:
+    """Every symbol that could not be classified, and why."""
+    return pd.DataFrame(
+        sorted(result.skipped.items()), columns=SKIPPED_COLUMNS
+    )
+
+
 def build_sheets(result: ScanResult) -> dict[str, pd.DataFrame]:
     """Sheet name -> rows, ordered so the strongest positions come first."""
     return {
@@ -59,6 +69,8 @@ def build_sheets(result: ScanResult) -> dict[str, pd.DataFrame]:
         "Below": _sorted_frame(result.below, "% to Nearest Line", ascending=True),
         "Mixed": _sorted_frame(result.mixed, "Symbol", ascending=True),
         "All": _sorted_frame(all_readings(result), "Symbol", ascending=True),
+        # Named, not just counted — the workbook accounts for every symbol.
+        "Skipped": build_skipped_frame(result),
     }
 
 

@@ -47,7 +47,8 @@ python -m nse_ichimoku
 ```
 
 That downloads the full NSE equity list, pulls a year of daily candles for
-each symbol from Yahoo Finance, and prints the two lists of names:
+each symbol from Yahoo Finance, writes `ichimoku-<session-date>.xlsx`, and
+prints the two lists of names:
 
 ```
 Ichimoku positions as of 2026-08-04 (latest NSE daily close)
@@ -98,6 +99,10 @@ lands in its own file instead of overwriting yesterday's.
 `--output` writes an `.xlsx` workbook holding the complete scan — every
 stock, not just the two headline lists:
 
+Every run writes one, with no flag needed — `python -m nse_ichimoku` alone
+produces `ichimoku-<session-date>.xlsx` in the current directory. Use
+`--output` for a different path, or `--no-file` to print to the console only.
+
 | Sheet | Contents |
 |---|---|
 | Summary | Session date, run time, universe size and source, and the counts |
@@ -105,6 +110,12 @@ stock, not just the two headline lists:
 | Below | Stocks below every line, deepest first |
 | Mixed | Stocks tangled in the lines |
 | All | Every classified stock, alphabetical |
+| Skipped | Every symbol that could not be classified, and why |
+
+Between `All` and `Skipped`, every symbol in the universe is accounted for
+by name. A stock never disappears without explanation: the `Skipped` sheet
+gives the reason — `no price data`, `insufficient history: 40 of 78 daily
+bars`, `lagging the session`, and so on.
 
 Each row carries the raw levels *and* the percentage gap between the close
 and every line:
@@ -151,11 +162,11 @@ python -m nse_ichimoku --symbols RELIANCE TCS INFY
 # Try a slice of the exchange first — a full scan takes a while
 python -m nse_ichimoku --limit 200
 
-# Save the full scan to Excel ({date} keeps one file per session)
-python -m nse_ichimoku --output ichimoku-{date}.xlsx
+# Write the workbook somewhere else ({date} keeps one file per session)
+python -m nse_ichimoku --output scans/ichimoku-{date}.xlsx
 
-# --output with no path is shorthand for exactly that
-python -m nse_ichimoku --output
+# Console only, no file
+python -m nse_ichimoku --no-file
 
 # Ignore stocks whose last bar lags the rest of the market
 python -m nse_ichimoku --fresh-only

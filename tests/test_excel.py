@@ -34,7 +34,7 @@ def result():
 
 def test_sheets_cover_every_position(result):
     sheets = build_sheets(result)
-    assert set(sheets) == {"Above", "Below", "Mixed", "All"}
+    assert set(sheets) == {"Above", "Below", "Mixed", "All", "Skipped"}
     assert set(sheets["All"]["Symbol"]) == {"BULLCO", "ROCKET", "BEARCO", "FLATCO"}
     assert set(sheets["Above"]["Position"]) == {"ABOVE"}
     assert set(sheets["Below"]["Position"]) == {"BELOW"}
@@ -69,7 +69,7 @@ def test_workbook_round_trips(tmp_path, result):
     assert path.exists()
 
     book = openpyxl.load_workbook(path)
-    assert book.sheetnames == ["Summary", "Above", "Below", "Mixed", "All"]
+    assert book.sheetnames == ["Summary", "Above", "Below", "Mixed", "All", "Skipped"]
 
     sheet = book["All"]
     headers = [cell.value for cell in sheet[1]]
@@ -144,13 +144,65 @@ def test_cli_writes_excel_from_extension(tmp_path, capsys):
     assert "% to Nearest Line" in frame.columns
 
 
-def test_cli_output_flag_defaults_to_a_dated_workbook(tmp_path, capsys, monkeypatch):
+def test_every_run_writes_a_dated_workbook_without_being_asked(
+    tmp_path, capsys, monkeypatch
+):
+    monkeypatch.chdir(tmp_path)
+    _write_csvs(tmp_path, {"BULLCO": UPTREND})
+    assert (
+        cli.main(["--symbols", "BULLCO", "--source", "csv", "--csv-dir", str(tmp_path)])
+        == 0
+    )
+    assert (tmp_path / "ichimoku-2026-08-04.xlsx").exists()
+
+
+def test_no_file_suppresses_the_workbook(tmp_path, capsys, monkeypatch):
     monkeypatch.chdir(tmp_path)
     _write_csvs(tmp_path, {"BULLCO": UPTREND})
     assert (
         cli.main(
-            ["--symbols", "BULLCO", "--source", "csv", "--csv-dir", str(tmp_path), "--output"]
+            [
+                "--symbols",
+                "BULLCO",
+                "--source",
+                "csv",
+                "--csv-dir",
+                str(tmp_path),
+                "--no-file",
+            ]
         )
         == 0
     )
-    assert (tmp_path / "ichimoku-2026-08-04.xlsx").exists()
+    assert list(tmp_path.glob("*.xlsx")) == []
+
+
+def test_skipped_sheet_names_every_dropped_symbol(tmp_path):
+    _write_csvs(tmp_path, {"BULLCO": UPTREND})
+    out = tmp_path / "scan.xlsx"
+    assert (
+        cli.main(
+            [
+                "--symbols",
+                "BULLCO",
+                "GHOSTCO",
+                "--source",
+                "csv",
+                "--csv-dir",
+                str(tmp_path),
+                "--output",
+                str(out),
+            ]
+        )
+        == 0
+    )
+    skipped = pd.read_excel(out, sheet_name="Skipped")
+    assert list(skipped.columns) == ["Symbol", "Reason"]
+    assert skipped.set_index("Symbol").loc["GHOSTCO", "Reason"] == "no price data"
+
+
+def test_skipped_sheet_records_short_history(tmp_path, result):
+    short = scan({"BULLCO": UPTREND, "NEWIPO": _ohlc(np.arange(100, 140, dtype=float))})
+    path = write_workbook(short, tmp_path / "out.xlsx", 2, "file")
+    skipped = pd.read_excel(path, sheet_name="Skipped")
+    reason = skipped.set_index("Symbol").loc["NEWIPO", "Reason"]
+    assert "insufficient history" in reason and "78 daily bars" in reason

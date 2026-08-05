@@ -7,7 +7,7 @@ import logging
 import sys
 
 from . import __version__, data, report, universe
-from .screener import scan
+from .screener import NO_PRICE_DATA, scan
 
 log = logging.getLogger(__name__)
 
@@ -86,11 +86,16 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--output",
-        nargs="?",
-        const=DEFAULT_OUTPUT,
-        help="write the full scan to this path; .xlsx gives a formatted Excel "
-        "workbook, .csv a flat file. A {date} placeholder expands to the session "
-        f"date. Passed with no value, writes {DEFAULT_OUTPUT}",
+        default=DEFAULT_OUTPUT,
+        metavar="PATH",
+        help="where to write the scan; .xlsx gives a formatted Excel workbook, "
+        ".csv a flat file. A {date} placeholder expands to the session date "
+        f"(default: {DEFAULT_OUTPUT})",
+    )
+    parser.add_argument(
+        "--no-file",
+        action="store_true",
+        help="print to the console only, without writing a workbook",
     )
     parser.add_argument("-v", "--verbose", action="store_true", help="verbose logging")
     return parser
@@ -142,7 +147,9 @@ def main(argv: list[str] | None = None) -> int:
         )
 
     result = scan(price_data)
-    result.skipped.extend(sorted(set(symbols) - set(price_data)))
+    result.skipped.update(
+        {s: NO_PRICE_DATA for s in sorted(set(symbols) - set(price_data))}
+    )
     if args.fresh_only:
         result = result.drop_stale()
 
@@ -158,7 +165,7 @@ def main(argv: list[str] | None = None) -> int:
 
     print("\n" + report.summary_line(result, len(symbols), source))
 
-    if args.output:
+    if not args.no_file:
         out_path = report.resolve_output_path(args.output, result)
         try:
             written = report.write_results(result, out_path, len(symbols), source)

@@ -8,7 +8,7 @@ from datetime import date, datetime, timedelta, timezone
 
 import pandas as pd
 
-from .ichimoku import IchimokuReading, Position, read_latest
+from .ichimoku import MIN_BARS, IchimokuReading, Position, read_latest
 
 log = logging.getLogger(__name__)
 
@@ -22,10 +22,15 @@ def ist_today() -> date:
     return datetime.now(IST).date()
 
 
+NO_PRICE_DATA = "no price data"
+LAGGING_SESSION = "lagging the session"
+
+
 @dataclass
 class ScanResult:
     readings: list[IchimokuReading] = field(default_factory=list)
-    skipped: list[str] = field(default_factory=list)  # no data / too little history
+    #: Symbol -> why it could not be classified, so nothing vanishes silently.
+    skipped: dict[str, str] = field(default_factory=dict)
 
     def by_position(self, position: Position) -> list[IchimokuReading]:
         return sorted(
@@ -73,25 +78,39 @@ class ScanResult:
         as_of = self.as_of
         if as_of is None:
             return self
-        stale_symbols = [r.symbol for r in self.stale]
         return ScanResult(
             readings=[r for r in self.readings if r.date >= as_of],
-            skipped=sorted(self.skipped + stale_symbols),
+            skipped={
+                **self.skipped,
+                **{r.symbol: LAGGING_SESSION for r in self.stale},
+            },
         )
+
+
+def skip_reason(frame: pd.DataFrame) -> str:
+    """Explain, in the report's terms, why a frame yielded no reading."""
+    missing = {"High", "Low", "Close"} - set(frame.columns)
+    if missing:
+        return f"missing columns: {', '.join(sorted(missing))}"
+    usable = len(frame.dropna(subset=["High", "Low", "Close"]))
+    if usable < MIN_BARS:
+        return f"insufficient history: {usable} of {MIN_BARS} daily bars"
+    return "incomplete Ichimoku values at the latest bar"
 
 
 def scan(price_data: dict[str, pd.DataFrame]) -> ScanResult:
     """Classify every symbol whose data supports a complete Ichimoku read."""
     result = ScanResult()
     for symbol in sorted(price_data):
+        frame = price_data[symbol]
         try:
-            reading = read_latest(symbol, price_data[symbol])
+            reading = read_latest(symbol, frame)
         except Exception as exc:
             log.warning("failed to evaluate %s: %s", symbol, exc)
-            result.skipped.append(symbol)
+            result.skipped[symbol] = f"evaluation error: {exc}"
             continue
         if reading is None:
-            result.skipped.append(symbol)
+            result.skipped[symbol] = skip_reason(frame)
         else:
             result.readings.append(reading)
     return result
