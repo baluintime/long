@@ -8,6 +8,9 @@ close and every line.
 
 from __future__ import annotations
 
+import logging
+import os
+import tempfile
 from datetime import datetime
 from pathlib import Path
 
@@ -23,7 +26,12 @@ from .report import (
 )
 from .screener import IST, ScanResult
 
+log = logging.getLogger(__name__)
+
 SUMMARY_SHEET = "Summary"
+
+#: Every .xlsx is a ZIP archive; Excel rejects anything else outright.
+ZIP_MAGIC = b"PK"
 PRICE_FORMAT = "#,##0.00"
 PERCENT_FORMAT = '0.00"%"'
 MAX_COLUMN_WIDTH = 22
@@ -138,29 +146,93 @@ def _style_sheet(worksheet, frame: pd.DataFrame, freeze_first_column: bool) -> N
     worksheet.auto_filter.ref = worksheet.dimensions
 
 
-def write_workbook(
-    result: ScanResult, path: str | Path, universe_size: int, source: str
-) -> Path:
-    """Write the full scan to an .xlsx workbook and return its path."""
-    out_path = Path(path)
-    if out_path.parent != Path(""):
-        out_path.parent.mkdir(parents=True, exist_ok=True)
+def verify_workbook(path: str | Path) -> None:
+    """Raise unless ``path`` is a workbook Excel will actually open.
 
-    summary = build_summary(result, universe_size, source)
-    sheets = build_sheets(result)
+    Excel reports "the file format or file extension is not valid" for
+    anything that is not a real .xlsx — CSV text under an .xlsx name, or a
+    file truncated by a crash mid-write. Catching that here means a bad
+    file is never handed to the user in the first place.
+    """
+    file_path = Path(path)
+    if not file_path.exists():
+        raise ValueError(f"{file_path} was not created")
+    if file_path.stat().st_size == 0:
+        raise ValueError(f"{file_path} is empty")
 
-    with pd.ExcelWriter(out_path, engine="openpyxl") as writer:
+    with open(file_path, "rb") as handle:
+        magic = handle.read(2)
+    if magic != ZIP_MAGIC:
+        raise ValueError(
+            f"{file_path} is not a valid .xlsx: it starts with {magic!r} rather "
+            "than a ZIP header, so Excel will refuse to open it"
+        )
+
+    from openpyxl import load_workbook
+
+    book = load_workbook(file_path, read_only=True)
+    try:
+        if not book.sheetnames:
+            raise ValueError(f"{file_path} contains no sheets")
+    finally:
+        book.close()
+
+
+def _write_sheets(
+    target: Path, summary: pd.DataFrame, sheets: dict[str, pd.DataFrame]
+) -> None:
+    with pd.ExcelWriter(target, engine="openpyxl") as writer:
         summary.to_excel(writer, sheet_name=SUMMARY_SHEET, index=False)
         for name, frame in sheets.items():
             # An empty frame still writes its header row, so the sheet
             # exists and the columns are documented.
             frame.to_excel(writer, sheet_name=name, index=False)
 
-        _style_sheet(writer.sheets[SUMMARY_SHEET], summary, freeze_first_column=False)
-        for name, frame in sheets.items():
-            _style_sheet(writer.sheets[name], frame, freeze_first_column=True)
+        for name, frame in {SUMMARY_SHEET: summary, **sheets}.items():
+            try:
+                _style_sheet(
+                    writer.sheets[name], frame, freeze_first_column=name != SUMMARY_SHEET
+                )
+            except Exception as exc:
+                # Formatting is cosmetic; never lose the data over it.
+                log.warning("could not format sheet %r: %s", name, exc)
+
+
+def write_workbook(
+    result: ScanResult, path: str | Path, universe_size: int, source: str
+) -> Path:
+    """Write the full scan to an .xlsx workbook and return its path.
+
+    The workbook is built in a temporary file alongside the destination,
+    verified, and only then moved into place, so an interrupted or failing
+    run leaves the previous day's file intact rather than a corrupt one.
+    """
+    out_path = Path(path)
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+
+    summary = build_summary(result, universe_size, source)
+    sheets = build_sheets(result)
+
+    handle, temp_name = tempfile.mkstemp(
+        dir=out_path.parent, prefix=f".{out_path.stem}-", suffix=".xlsx"
+    )
+    os.close(handle)
+    temp_path = Path(temp_name)
+    try:
+        _write_sheets(temp_path, summary, sheets)
+        verify_workbook(temp_path)
+        os.replace(temp_path, out_path)
+    except BaseException:
+        temp_path.unlink(missing_ok=True)
+        raise
 
     return out_path
 
 
-__all__ = ["DETAIL_COLUMNS", "build_sheets", "build_summary", "write_workbook"]
+__all__ = [
+    "DETAIL_COLUMNS",
+    "build_sheets",
+    "build_summary",
+    "verify_workbook",
+    "write_workbook",
+]

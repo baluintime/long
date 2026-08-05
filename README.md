@@ -191,6 +191,31 @@ If NSE is unreachable, the screener falls back to the bundled snapshot in
 — and prints a warning saying so. Pass `--no-fallback` to make an
 unreachable NSE a hard error instead.
 
+## Troubleshooting
+
+**"Excel cannot open the file … because the file format or file extension is
+not valid."**
+
+The file is not really an `.xlsx`. Check what it actually is:
+
+```bash
+file ichimoku-*.xlsx          # macOS / Linux
+```
+
+A healthy workbook reports `Microsoft Excel 2007+`. If it says `CSV ASCII
+text`, the file was written by a version of this tool older than Excel
+support — update and re-run:
+
+```bash
+git pull
+pip install -r requirements.txt   # brings in openpyxl
+python -m nse_ichimoku
+```
+
+Every run now prints the format it wrote (`Excel workbook written to …`),
+and the workbook is verified before it is put in place, so a failed run
+leaves the previous day's file untouched rather than a corrupt one.
+
 ## Tests
 
 ```bash

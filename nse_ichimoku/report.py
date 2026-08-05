@@ -175,17 +175,26 @@ def write_csv(result: ScanResult, path: str | Path) -> None:
     readings_to_frame(all_readings(result)).to_csv(path, index=False)
 
 
+EXCEL_SUFFIXES = (".xlsx", ".xlsm")
+
+
 def write_results(
     result: ScanResult, path: str | Path, universe_size: int, source: str
-) -> Path:
-    """Write the scan to ``path``, choosing the format from its extension."""
+) -> tuple[Path, str]:
+    """Write the scan to ``path``, choosing the format from its extension.
+
+    Returns the path and the format actually written. An Excel extension
+    only ever gets a real workbook: writing CSV text under an .xlsx name is
+    what makes Excel report an invalid file format, so it never happens
+    silently — a missing openpyxl raises instead.
+    """
     out_path = Path(path)
-    if out_path.suffix.lower() in (".xlsx", ".xlsm"):
+    if out_path.suffix.lower() in EXCEL_SUFFIXES:
         from .excel import write_workbook
 
-        return write_workbook(result, out_path, universe_size, source)
+        return write_workbook(result, out_path, universe_size, source), "Excel workbook"
     write_csv(result, out_path)
-    return out_path
+    return out_path, "CSV"
 
 
 def summary_line(result: ScanResult, universe_size: int, source: str) -> str:

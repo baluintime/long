@@ -168,13 +168,16 @@ def main(argv: list[str] | None = None) -> int:
     if not args.no_file:
         out_path = report.resolve_output_path(args.output, result)
         try:
-            written = report.write_results(result, out_path, len(symbols), source)
+            written, kind = report.write_results(result, out_path, len(symbols), source)
         except ImportError:
             print(
-                "error: writing .xlsx needs openpyxl — pip install openpyxl "
-                "(or use a .csv path)",
+                f"error: writing {out_path} needs openpyxl — run "
+                "'pip install -r requirements.txt' (or choose a .csv path)",
                 file=sys.stderr,
             )
             return 1
-        print(f"Full results written to {written}")
+        except Exception as exc:
+            print(f"error: could not write {out_path}: {exc}", file=sys.stderr)
+            return 1
+        print(f"{kind} written to {written}")
     return 0
